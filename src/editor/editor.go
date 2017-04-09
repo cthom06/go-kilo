@@ -312,7 +312,7 @@ func (E *editorConfig) moveCursor(key int) {
 				} else {
 					E.cx++
 				}
-			} else {
+			} else if fr < len(E.rows) - 1 {
 				E.cx = 0
 				E.coloff = 0
 				if E.cy == E.screenrows-1 {
@@ -331,7 +331,7 @@ func (E *editorConfig) moveCursor(key int) {
 			E.cy--
 		}
 	case ARROW_DOWN:
-		if fr < len(E.rows) {
+		if fr < len(E.rows) - 1 {
 			if E.cy == E.screenrows-1 {
 				E.rowoff++
 			} else {
