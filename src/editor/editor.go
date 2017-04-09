@@ -141,6 +141,25 @@ func (E *editorConfig) cursorRenderPosition() (int, int) {
 	return E.cy, cx
 }
 
+func (E *editorConfig) renderPositionToCursor(y, x int) (int, int) {
+	if y < 0 || y >= len(E.rows) {
+		return 0, 0
+	}
+	row := &E.rows[y]
+	cx := 0
+	for i := 0; i < len(row.chars); i++ {
+		if row.chars[i] == '\t' {
+			cx = cx + TAB_WIDTH - cx%TAB_WIDTH
+		} else {
+			cx++
+		}
+		if cx > x {
+			return y, i
+		}
+	}
+	return y, len(row.chars)
+}
+
 func (E *editorConfig) open(filename string) error {
 	E.filename = filename
 
@@ -284,14 +303,13 @@ func (E *editorConfig) cursorToBounds() {
 }
 
 func (E *editorConfig) moveCursor(key int) {
-	fr, fc := E.cy, E.cx
 	var row *erow = nil
-	if fr < len(E.rows) {
-		row = &E.rows[fr]
+	if E.cy < len(E.rows) {
+		row = &E.rows[E.cy]
 	}
 	switch key {
 	case ARROW_LEFT:
-		if fc == 0 {
+		if E.cx == 0 {
 			if E.cy > 0 {
 				E.cy--
 				E.cx = len(E.rows[E.cy].chars)
@@ -301,7 +319,7 @@ func (E *editorConfig) moveCursor(key int) {
 		}
 	case ARROW_RIGHT:
 		if row != nil {
-			if fc == len(row.chars) {
+			if E.cx == len(row.chars) {
 				if E.cy < len(E.rows)-1 {
 					E.cy++
 					E.cx = 0
@@ -310,11 +328,14 @@ func (E *editorConfig) moveCursor(key int) {
 				E.cx++
 			}
 		}
-		// cursorToBounds handles the bounds check on UP/DOWN
-	case ARROW_UP:
-		E.cy--
-	case ARROW_DOWN:
-		E.cy++
+	case ARROW_UP, ARROW_DOWN:
+		_, rx := E.cursorRenderPosition()
+		if key == ARROW_UP {
+			E.cy--
+		} else {
+			E.cy++
+		}
+		E.cy, E.cx = E.renderPositionToCursor(E.cy, rx)
 	default:
 		panic("bad key to moveCursor")
 	}
