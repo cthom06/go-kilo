@@ -222,14 +222,14 @@ func (E *editorConfig) refreshScreen() {
 					for i := 0; i < spaces; i++ {
 						if l >= minl && l < maxl {
 							addch(' ')
-							l++
 						}
+						l++
 					}
 				} else {
 					if l >= minl {
 						addch(b)
-						l++
 					}
+					l++
 				}
 			}
 		}
@@ -251,6 +251,9 @@ func (E *editorConfig) refreshScreen() {
 		status = status[:E.screencols]
 	}
 	addstr(status)
+	for i := len(status); i < E.screencols; i++ {
+		addch(' ')
+	}
 	endReverse()
 
 	move(y+1, 0)
@@ -312,7 +315,7 @@ func (E *editorConfig) moveCursor(key int) {
 				} else {
 					E.cx++
 				}
-			} else if fr < len(E.rows) - 1 {
+			} else if fr < len(E.rows)-1 {
 				E.cx = 0
 				E.coloff = 0
 				if E.cy == E.screenrows-1 {
@@ -331,7 +334,7 @@ func (E *editorConfig) moveCursor(key int) {
 			E.cy--
 		}
 	case ARROW_DOWN:
-		if fr < len(E.rows) - 1 {
+		if fr < len(E.rows)-1 {
 			if E.cy == E.screenrows-1 {
 				E.rowoff++
 			} else {
