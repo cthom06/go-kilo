@@ -86,57 +86,43 @@ func (E *editorConfig) delChar(rowInd, colInd int) {
 }
 
 func (E *editorConfig) insertCharAtCursor(c byte) {
-	fr, fc := E.cursorFilePosition()
-	for fr >= len(E.rows) {
+	for E.cy >= len(E.rows) {
 		E.insertRow(len(E.rows), []byte{})
 	}
-	E.insertChar(fr, fc, c)
+	E.insertChar(E.cy, E.cx, c) // E is dirty
 	E.cx++
-	E.dirty = true
 }
 
 func (E *editorConfig) insertNewlineAtCursor() {
-	fr, fc := E.cursorFilePosition()
-	if fc == 0 || fr == len(E.rows) {
-		E.insertRow(fr, []byte{})
+	if E.cx == 0 || E.cy == len(E.rows) {
+		E.insertRow(E.cy, []byte{}) // E is dirty
 	} else {
-		E.insertRow(fr+1, []byte{})
-		E.appendBytes(fr+1, E.rows[fr].chars[fc:])
-		E.rows[fr].chars = E.rows[fr].chars[:fc]
+		E.insertRow(E.cy+1, []byte{}) // E is dirty
+		E.appendBytes(E.cy+1, E.rows[E.cy].chars[E.cx:])
+		E.rows[E.cy].chars = E.rows[E.cy].chars[:E.cx]
 	}
-
 	E.cy++
 	E.cx = 0
-	// E is already dirty
 }
 
 func (E *editorConfig) delCharAtCursor() {
-	fr, fc := E.cursorFilePosition()
-	if fc == 0 && fr == 0 {
+	if E.cx == 0 && E.cy == 0 {
 		return
 	}
-	if fc == 0 {
-		fc = len(E.rows[fr-1].chars)
-		E.appendBytes(fr-1, E.rows[fr].chars)
-		E.delRow(fr)
+	if E.cx == 0 {
+		E.cx = len(E.rows[E.cy-1].chars)
+		E.appendBytes(E.cy-1, E.rows[E.cy].chars) // E is dirty
+		E.delRow(E.cy)
 		E.cy--
-		E.cx = fc
 	} else {
-		E.delChar(fr, fc-1)
+		E.delChar(E.cy, E.cx-1) // E is dirty
 		E.cx--
 	}
-	// E is already dirty
 }
 
 func (E *editorConfig) appendBytes(rowInd int, b []byte) {
 	E.rows[rowInd].chars = append(E.rows[rowInd].chars, b...)
 	E.dirty = true
-}
-
-// used to be calculated, need to remove
-// now is just (E.cy, E.cx)
-func (E *editorConfig) cursorFilePosition() (int, int) {
-	return E.cy, E.cx
 }
 
 func (E *editorConfig) cursorRenderPosition() (int, int) {
@@ -298,7 +284,7 @@ func (E *editorConfig) cursorToBounds() {
 }
 
 func (E *editorConfig) moveCursor(key int) {
-	fr, fc := E.cursorFilePosition()
+	fr, fc := E.cy, E.cx
 	var row *erow = nil
 	if fr < len(E.rows) {
 		row = &E.rows[fr]
