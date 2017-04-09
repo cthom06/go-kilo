@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"time"
 )
@@ -90,11 +91,7 @@ func (E *editorConfig) insertCharAtCursor(c byte) {
 		E.insertRow(len(E.rows), []byte{})
 	}
 	E.insertChar(fr, fc, c)
-	if E.cx == E.screencols-1 {
-		E.coloff++
-	} else {
-		E.cx++
-	}
+	E.cx++
 	E.dirty = true
 }
 
@@ -108,13 +105,8 @@ func (E *editorConfig) insertNewlineAtCursor() {
 		E.rows[fr].chars = E.rows[fr].chars[:fc]
 	}
 
-	if E.cy == E.screenrows-1 {
-		E.rowoff++
-	} else {
-		E.cy++
-	}
+	E.cy++
 	E.cx = 0
-	E.coloff = 0
 	// E is already dirty
 }
 
@@ -127,24 +119,11 @@ func (E *editorConfig) delCharAtCursor() {
 		fc = len(E.rows[fr-1].chars)
 		E.appendBytes(fr-1, E.rows[fr].chars)
 		E.delRow(fr)
-		if E.cy == 0 {
-			E.rowoff--
-		} else {
-			E.cy--
-		}
+		E.cy--
 		E.cx = fc
-		if E.cx >= E.screencols {
-			sh := (E.screencols - E.cx) + 1
-			E.cx = E.cx - sh
-			E.coloff = E.coloff + sh
-		}
 	} else {
 		E.delChar(fr, fc-1)
-		if E.cx == 0 && E.coloff != 0 {
-			E.coloff--
-		} else {
-			E.cx--
-		}
+		E.cx--
 	}
 	// E is already dirty
 }
@@ -154,8 +133,26 @@ func (E *editorConfig) appendBytes(rowInd int, b []byte) {
 	E.dirty = true
 }
 
+// used to be calculated, need to remove
+// now is just (E.cy, E.cx)
 func (E *editorConfig) cursorFilePosition() (int, int) {
-	return E.rowoff + E.cy, E.coloff + E.cx
+	return E.cy, E.cx
+}
+
+func (E *editorConfig) cursorRenderPosition() (int, int) {
+	if E.cy >= len(E.rows) {
+		return 0, 0
+	}
+	row := &E.rows[E.cy]
+	cx := 0
+	for i := 0; i < E.cx; i++ {
+		if row.chars[i] == '\t' {
+			cx = cx + TAB_WIDTH - cx%TAB_WIDTH
+		} else {
+			cx++
+		}
+	}
+	return E.cy, cx
 }
 
 func (E *editorConfig) open(filename string) error {
@@ -174,6 +171,9 @@ func (E *editorConfig) open(filename string) error {
 		line, err = bf.ReadBytes('\n')
 	}
 	E.dirty = false
+	if err == io.EOF {
+		err = nil
+	}
 	return err
 }
 
@@ -205,6 +205,19 @@ func (E *editorConfig) save() error {
 func (E *editorConfig) refreshScreen() {
 	clear()
 	y := 0
+	ry, rx := E.cursorRenderPosition()
+	for ry-E.rowoff >= E.screenrows {
+		E.rowoff++
+	}
+	for ry-E.rowoff < 0 {
+		E.rowoff--
+	}
+	for rx-E.coloff >= E.screencols {
+		E.coloff++
+	}
+	for rx-E.coloff < 0 {
+		E.coloff--
+	}
 	for ; y < E.screenrows; y++ {
 		move(y, 0)
 		fr := E.rowoff + y
@@ -242,8 +255,8 @@ func (E *editorConfig) refreshScreen() {
 	}
 	status :=
 		fmt.Sprintf("%d,%d/%d - %s %s",
-			E.coloff+E.cx+1,
-			E.rowoff+E.cy+1,
+			rx+1,
+			ry+1,
 			len(E.rows),
 			E.filename,
 			d)
@@ -261,28 +274,27 @@ func (E *editorConfig) refreshScreen() {
 		addstr(E.statusmsg)
 	}
 
-	cx := 1
-	fr := E.rowoff + E.cy
-	if fr < len(E.rows) {
-		row := &E.rows[fr]
-		for j := E.coloff; j < E.cx+E.coloff; j++ {
-			if j < len(row.chars) && row.chars[j] == TAB {
-				m := cx % TAB_WIDTH
-				if m == 0 {
-					m = TAB_WIDTH
-				}
-				cx = cx + (TAB_WIDTH) - m
-			}
-			cx++
-		}
-	}
-	move(E.cy, cx-1)
+	move(ry-E.rowoff, rx-E.coloff)
 	refresh()
 }
 
 func (E *editorConfig) setStatusMessage(msg string) {
 	E.statusmsg = msg
 	E.statusmsg_time = time.Now()
+}
+
+func (E *editorConfig) cursorToBounds() {
+	if E.cy >= len(E.rows) {
+		E.cy = len(E.rows) - 1
+	}
+	if E.cy > -1 {
+		if E.cx > len(E.rows[E.cy].chars) {
+			E.cx = len(E.rows[E.cy].chars)
+		}
+	} else {
+		E.cy = 0
+		E.cx = 0
+	}
 }
 
 func (E *editorConfig) moveCursor(key int) {
@@ -293,68 +305,34 @@ func (E *editorConfig) moveCursor(key int) {
 	}
 	switch key {
 	case ARROW_LEFT:
-		if E.cx == 0 {
-			if E.coloff > 0 {
-				E.coloff--
-			} else if fr > 0 {
+		if fc == 0 {
+			if E.cy > 0 {
 				E.cy--
-				E.cx = len(E.rows[fr-1].chars)
-				if E.cx > E.screencols-1 {
-					E.coloff = E.cx - E.screencols + 1
-					E.cx = E.screencols - 1
-				}
+				E.cx = len(E.rows[E.cy].chars)
 			}
 		} else {
 			E.cx--
 		}
 	case ARROW_RIGHT:
 		if row != nil {
-			if fc < len(row.chars) {
-				if E.cx == E.screencols-1 {
-					E.coloff++
-				} else {
-					E.cx++
-				}
-			} else if fr < len(E.rows)-1 {
-				E.cx = 0
-				E.coloff = 0
-				if E.cy == E.screenrows-1 {
-					E.rowoff++
-				} else {
+			if fc == len(row.chars) {
+				if E.cy < len(E.rows)-1 {
 					E.cy++
+					E.cx = 0
 				}
-			}
-		}
-	case ARROW_UP:
-		if E.cy == 0 {
-			if E.rowoff > 0 {
-				E.rowoff--
-			}
-		} else {
-			E.cy--
-		}
-	case ARROW_DOWN:
-		if fr < len(E.rows)-1 {
-			if E.cy == E.screenrows-1 {
-				E.rowoff++
 			} else {
-				E.cy++
+				E.cx++
 			}
 		}
+		// cursorToBounds handles the bounds check on UP/DOWN
+	case ARROW_UP:
+		E.cy--
+	case ARROW_DOWN:
+		E.cy++
+	default:
+		panic("bad key to moveCursor")
 	}
-
-	fr, fc = E.cursorFilePosition()
-	rl := 0
-	if fr < len(E.rows) {
-		rl = len(E.rows[fr].chars)
-	}
-	if fc > rl {
-		E.cx = E.cx - (fc - rl)
-		if E.cx < 0 {
-			E.coloff += E.cx
-			E.cx = 0
-		}
-	}
+	E.cursorToBounds()
 }
 
 var qtimes = QUIT_TIMES
@@ -376,19 +354,12 @@ func (E *editorConfig) processKeypress() (quit bool) {
 		E.save()
 	case BACKSPACE, CTRL_H, DEL_KEY:
 		E.delCharAtCursor()
-	case PAGE_UP, PAGE_DOWN:
-		if c == PAGE_UP && E.cy != 0 {
-			E.cy = 0
-		} else if c == PAGE_DOWN && E.cy != E.screenrows-1 {
-			E.cy = E.screenrows - 1
-		}
-		for times := E.screenrows; times >= 0; times-- {
-			if c == PAGE_UP {
-				E.moveCursor(ARROW_UP)
-			} else {
-				E.moveCursor(ARROW_DOWN)
-			}
-		}
+	case PAGE_UP:
+		E.cy = E.cy - E.screenrows
+		E.cursorToBounds()
+	case PAGE_DOWN:
+		E.cy = E.cy + E.screenrows
+		E.cursorToBounds()
 	case ARROW_UP, ARROW_DOWN, ARROW_LEFT, ARROW_RIGHT:
 		E.moveCursor(c)
 	default:
@@ -416,9 +387,8 @@ func run() int {
 	defer endRaw()
 	E := initEditor()
 	if err := E.open(args[1]); err != nil {
-		E.setStatusMessage("couldn't open " + args[1])
+		E.setStatusMessage("couldn't open " + args[1] + ": " + err.Error())
 	}
-	E.setStatusMessage("HELP: Ctrl-S to save, Ctrl-Q to quit")
 	for true {
 		E.refreshScreen()
 		if E.processKeypress() {
