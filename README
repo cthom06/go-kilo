@@ -1,0 +1,11 @@
+INSTALL
+
+I build it by setting GOPATH=$(pwd) and running 'go build editor'. You do you though.
+
+ABOUT
+
+This is a simple curses-based text editor in Go, with support only for editing and saving. It is based heavily on https://github.com/antirez/kilo, albeit with features stripped out to simplify the code further.
+
+The primary goal was simplicity, not usability. As such it doesn't have a lot of utility as a text editor, but it is a good basis for exploring terminal editor development (At least for myself)
+
+
