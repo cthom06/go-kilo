@@ -120,12 +120,13 @@ func (E *editorConfig) appendRunes(rowInd int, b []rune) {
 	E.dirty = true
 }
 
-func (E *editorConfig) cursorRenderPosition() (int, int) {
+func (E *editorConfig) cursorRenderPosition() (y, cx, nw int) {
 	if E.cy >= len(E.rows) {
-		return 0, 0
+		return 0, 0, 1
 	}
 	row := &E.rows[E.cy]
-	cx := 0
+	cx = 0
+	nw = 1
 	for i := 0; i < E.cx; i++ {
 		if row.chars[i] == '\t' {
 			cx = cx + TAB_WIDTH - cx%TAB_WIDTH
@@ -133,7 +134,10 @@ func (E *editorConfig) cursorRenderPosition() (int, int) {
 			cx = cx + runeWidth(row.chars[i])
 		}
 	}
-	return E.cy, cx
+	if E.cx < len(row.chars) {
+		nw = runeWidth(row.chars[E.cx])
+	}
+	return E.cy, cx, nw
 }
 
 func (E *editorConfig) renderPositionToCursor(y, x int) (int, int) {
@@ -207,15 +211,16 @@ func (E *editorConfig) save() error {
 func (E *editorConfig) refreshScreen() {
 	clear()
 	y := 0
-	ry, rx := E.cursorRenderPosition()
+	ry, rx, rxw := E.cursorRenderPosition()
+	rxw-- // ignore if single width
 	if ry-E.rowoff >= E.screenrows {
 		E.rowoff = ry - (E.screenrows - 1)
 	}
 	if E.rowoff > ry {
 		E.rowoff = ry
 	}
-	if rx-E.coloff >= E.screencols {
-		E.coloff = rx - (E.screencols - 1)
+	if rx+rxw-E.coloff >= E.screencols {
+		E.coloff = rx + rxw - (E.screencols - 1)
 	}
 	if E.coloff > rx {
 		E.coloff = rx
@@ -229,33 +234,41 @@ func (E *editorConfig) refreshScreen() {
 		// ignore anything past the end of the file
 		if fr < len(E.rows) {
 			row := &E.rows[fr]
-			l := 0
+			displ := 0
+			reall := 0
 			minl := E.coloff
 			maxl := minl + E.screencols
-			for j := 0; j < len(row.chars) && l < maxl; j++ {
+			for j := 0; j < len(row.chars) && displ < maxl; j++ {
 				b := row.chars[j]
 				if b == TAB {
-					spaces := TAB_WIDTH - l%TAB_WIDTH
+					spaces := TAB_WIDTH - reall%TAB_WIDTH
 					for i := 0; i < spaces; i++ {
-						if l >= minl && l < maxl {
+						if displ >= minl && displ < maxl {
 							addch(' ')
 						}
-						l++
+						displ++
+						reall++
 					}
 				} else {
 					rsize := runeWidth(b)
-					if l >= minl && l+rsize <= maxl {
+					if displ >= minl && displ+rsize <= maxl {
 						n := utf8.EncodeRune(u8buff, b)
 						addstr(string(u8buff[:n]))
 					}
-					if l < minl && l+rsize > minl {
+					if displ < minl && displ+rsize > minl {
 						// if we don't check this, a wide character
 						// can be half counted even though it isn't
 						// actually using column space
-						l = minl
+
+						// additionally, this will fix the scrolling
+						// problem, but as long as the cursor can
+						// only move one cell at a time
+						E.coloff = E.coloff + (displ + rsize - minl)
+						displ = minl
 					} else {
-						l = l + rsize
+						displ = displ + rsize
 					}
+					reall = reall + rsize
 				}
 			}
 		}
@@ -337,7 +350,7 @@ func (E *editorConfig) moveCursor(key int) {
 			}
 		}
 	case ARROW_UP, ARROW_DOWN:
-		_, rx := E.cursorRenderPosition()
+		_, rx, _ := E.cursorRenderPosition()
 		if key == ARROW_UP {
 			E.cy--
 		} else {
