@@ -211,17 +211,17 @@ func (E *editorConfig) refreshScreen() {
 	clear()
 	y := 0
 	ry, rx := E.cursorRenderPosition()
-	for ry-E.rowoff >= E.screenrows {
-		E.rowoff++
+	if ry-E.rowoff >= E.screenrows {
+		E.rowoff = ry - (E.screenrows - 1)
 	}
-	for ry-E.rowoff < 0 {
-		E.rowoff--
+	if E.rowoff > ry {
+		E.rowoff = ry
 	}
-	for rx-E.coloff >= E.screencols {
-		E.coloff++
+	if rx-E.coloff >= E.screencols {
+		E.coloff = rx - (E.screencols - 1)
 	}
-	for rx-E.coloff < 0 {
-		E.coloff--
+	if E.coloff > rx {
+		E.coloff = rx
 	}
 	for ; y < E.screenrows; y++ {
 		move(y, 0)
