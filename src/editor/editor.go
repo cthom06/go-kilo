@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"time"
+	"unicode/utf8"
 )
 
 // This file is mostly ported from antirez' kilo
@@ -19,7 +20,7 @@ const (
 )
 
 type erow struct {
-	chars []byte
+	chars []rune
 }
 
 type editorConfig struct {
@@ -33,7 +34,7 @@ type editorConfig struct {
 	statusmsg_time         time.Time
 }
 
-func (E *editorConfig) insertRow(at int, s []byte) {
+func (E *editorConfig) insertRow(at int, s []rune) {
 	if at > len(E.rows) || at < 0 {
 		panic("bad insertRow?")
 	}
@@ -61,7 +62,7 @@ func (E *editorConfig) delRow(at int) {
 	E.dirty = true
 }
 
-func (E *editorConfig) insertChar(rowInd, colInd int, c byte) {
+func (E *editorConfig) insertChar(rowInd, colInd int, c rune) {
 	row := &E.rows[rowInd]
 	if colInd > len(row.chars) {
 		panic("bad insertChar?")
@@ -79,9 +80,9 @@ func (E *editorConfig) delChar(rowInd, colInd int) {
 	E.dirty = true
 }
 
-func (E *editorConfig) insertCharAtCursor(c byte) {
+func (E *editorConfig) insertCharAtCursor(c rune) {
 	for E.cy >= len(E.rows) {
-		E.insertRow(len(E.rows), []byte{})
+		E.insertRow(len(E.rows), []rune{})
 	}
 	E.insertChar(E.cy, E.cx, c) // E is dirty
 	E.cx++
@@ -89,10 +90,10 @@ func (E *editorConfig) insertCharAtCursor(c byte) {
 
 func (E *editorConfig) insertNewlineAtCursor() {
 	if E.cx == 0 || E.cy == len(E.rows) {
-		E.insertRow(E.cy, []byte{}) // E is dirty
+		E.insertRow(E.cy, []rune{}) // E is dirty
 	} else {
-		E.insertRow(E.cy+1, []byte{}) // E is dirty
-		E.appendBytes(E.cy+1, E.rows[E.cy].chars[E.cx:])
+		E.insertRow(E.cy+1, []rune{}) // E is dirty
+		E.appendRunes(E.cy+1, E.rows[E.cy].chars[E.cx:])
 		E.rows[E.cy].chars = E.rows[E.cy].chars[:E.cx]
 	}
 	E.cy++
@@ -105,7 +106,7 @@ func (E *editorConfig) delCharAtCursor() {
 	}
 	if E.cx == 0 {
 		E.cx = len(E.rows[E.cy-1].chars)
-		E.appendBytes(E.cy-1, E.rows[E.cy].chars) // E is dirty
+		E.appendRunes(E.cy-1, E.rows[E.cy].chars) // E is dirty
 		E.delRow(E.cy)
 		E.cy--
 	} else {
@@ -114,7 +115,7 @@ func (E *editorConfig) delCharAtCursor() {
 	}
 }
 
-func (E *editorConfig) appendBytes(rowInd int, b []byte) {
+func (E *editorConfig) appendRunes(rowInd int, b []rune) {
 	E.rows[rowInd].chars = append(E.rows[rowInd].chars, b...)
 	E.dirty = true
 }
@@ -129,7 +130,7 @@ func (E *editorConfig) cursorRenderPosition() (int, int) {
 		if row.chars[i] == '\t' {
 			cx = cx + TAB_WIDTH - cx%TAB_WIDTH
 		} else {
-			cx++
+			cx = cx + runeWidth(row.chars[i])
 		}
 	}
 	return E.cy, cx
@@ -145,7 +146,7 @@ func (E *editorConfig) renderPositionToCursor(y, x int) (int, int) {
 		if row.chars[i] == '\t' {
 			cx = cx + TAB_WIDTH - cx%TAB_WIDTH
 		} else {
-			cx++
+			cx = cx + runeWidth(row.chars[i])
 		}
 		if cx > x {
 			return y, i
@@ -164,10 +165,10 @@ func (E *editorConfig) open(filename string) error {
 	defer f.Close()
 
 	bf := bufio.NewReader(f)
-	line, err := bf.ReadBytes('\n')
+	line, err := bf.ReadString('\n')
 	for err == nil && len(line) > 0 {
-		E.insertRow(len(E.rows), line[:len(line)-1])
-		line, err = bf.ReadBytes('\n')
+		E.insertRow(len(E.rows), []rune(line[:len(line)-1]))
+		line, err = bf.ReadString('\n')
 	}
 	E.dirty = false
 	if err == io.EOF {
@@ -186,8 +187,10 @@ func (E *editorConfig) save() error {
 	bf := bufio.NewWriter(f)
 
 	for _, v := range E.rows {
-		if _, err := bf.Write(v.chars); err != nil {
-			return err
+		for _, r := range v.chars {
+			if _, err := bf.WriteRune(r); err != nil {
+				return err
+			}
 		}
 		if err := bf.WriteByte('\n'); err != nil {
 			return err
@@ -217,6 +220,8 @@ func (E *editorConfig) refreshScreen() {
 	if E.coloff > rx {
 		E.coloff = rx
 	}
+
+	u8buff := make([]byte, 4)
 	for ; y < E.screenrows; y++ {
 		move(y, 0)
 		fr := E.rowoff + y
@@ -238,10 +243,12 @@ func (E *editorConfig) refreshScreen() {
 						l++
 					}
 				} else {
-					if l >= minl {
-						addch(b)
+					rsize := runeWidth(b)
+					if l >= minl && l+rsize <= maxl {
+						n := utf8.EncodeRune(u8buff, b)
+						addstr(string(u8buff[:n]))
 					}
-					l++
+					l = l + rsize
 				}
 			}
 		}
@@ -364,7 +371,7 @@ func (E *editorConfig) processKeypress() (quit bool) {
 	case ARROW_UP, ARROW_DOWN, ARROW_LEFT, ARROW_RIGHT:
 		E.moveCursor(c)
 	default:
-		E.insertCharAtCursor(byte(c))
+		E.insertCharAtCursor(rune(c))
 	}
 	qtimes = QUIT_TIMES
 	return false

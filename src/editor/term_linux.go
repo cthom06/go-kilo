@@ -2,9 +2,10 @@
 
 package main
 
-// #cgo LDFLAGS: -lcurses -ltinfo
+// #cgo LDFLAGS: -lncursesw -ltinfo
 // #include <stdlib.h>
-// #include <curses.h>
+// #include <ncursesw/ncurses.h>
+// #include <locale.h>
 import "C"
 
 import (
@@ -33,6 +34,9 @@ const (
 )
 
 func startRaw() {
+	empty := C.CString("")
+	C.setlocale(C.LC_ALL, empty)
+	C.free(unsafe.Pointer(empty))
 	C.initscr()
 	C.raw()
 	C.keypad(C.stdscr, true)
