@@ -248,7 +248,14 @@ func (E *editorConfig) refreshScreen() {
 						n := utf8.EncodeRune(u8buff, b)
 						addstr(string(u8buff[:n]))
 					}
-					l = l + rsize
+					if l < minl && l+rsize > minl {
+						// if we don't check this, a wide character
+						// can be half counted even though it isn't
+						// actually using column space
+						l = minl
+					} else {
+						l = l + rsize
+					}
 				}
 			}
 		}
@@ -369,9 +376,9 @@ func (E *editorConfig) processKeypress() (quit bool) {
 		E.cy = E.cy + E.screenrows
 		E.cursorToBounds()
 	case ARROW_UP, ARROW_DOWN, ARROW_LEFT, ARROW_RIGHT:
-		E.moveCursor(c)
+		E.moveCursor(int(c))
 	default:
-		E.insertCharAtCursor(rune(c))
+		E.insertCharAtCursor(c)
 	}
 	qtimes = QUIT_TIMES
 	return false

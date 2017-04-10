@@ -2,8 +2,10 @@
 
 package main
 
+// #cgo CFLAGS: -D_XOPEN_SOURCE_EXTENDED
 // #cgo LDFLAGS: -lncursesw -ltinfo
 // #include <stdlib.h>
+// #include <wchar.h>
 // #include <ncursesw/ncurses.h>
 // #include <locale.h>
 import "C"
@@ -47,8 +49,10 @@ func endRaw() {
 	C.endwin()
 }
 
-func getch() int {
-	return int(C.getch())
+func getch() rune {
+	var c C.wint_t
+	C.wget_wch(C.stdscr, &c) // needs _XOPEN_SOURCE_EXTENDED
+	return rune(c)
 }
 
 func getWindowSize() (int, int) {
