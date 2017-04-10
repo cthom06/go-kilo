@@ -19,7 +19,6 @@ const (
 )
 
 type erow struct {
-	idx   int
 	chars []byte
 }
 
@@ -46,11 +45,7 @@ func (E *editorConfig) insertRow(at int, s []byte) {
 		newrows = newrows[0 : len(newrows)+1]
 	}
 	copy(newrows[at+1:], E.rows[at:])
-	for i := at + 1; i < len(newrows); i++ {
-		newrows[i].idx++
-	}
 	newrows[at].chars = s
-	newrows[at].idx = at
 	E.rows = newrows
 	E.dirty = true
 }
@@ -61,7 +56,6 @@ func (E *editorConfig) delRow(at int) {
 	}
 	for i := at + 1; i < len(E.rows); i++ {
 		E.rows[i-1] = E.rows[i]
-		E.rows[i-1].idx--
 	}
 	E.rows = E.rows[:len(E.rows)-1]
 	E.dirty = true
