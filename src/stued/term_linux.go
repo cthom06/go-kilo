@@ -11,6 +11,7 @@ package main
 import "C"
 
 import (
+	"unicode/utf8"
 	"unsafe"
 )
 
@@ -49,7 +50,7 @@ func endRaw() {
 	C.endwin()
 }
 
-func getch() rune {
+func getrune() rune {
 	var c C.wint_t
 	C.wget_wch(C.stdscr, &c) // needs _XOPEN_SOURCE_EXTENDED
 	return rune(c)
@@ -71,8 +72,12 @@ func refresh() {
 	C.refresh()
 }
 
-func addch(b byte) {
-	C.addch(C.chtype(b))
+func addrune(r rune) {
+	var buff [5]byte
+	if utf8.EncodeRune(buff[:], r) > 4 {
+		panic("rune too long?")
+	}
+	C.addstr((*C.char)(unsafe.Pointer(&buff[0])))
 }
 
 func addstr(s string) {
