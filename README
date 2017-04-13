@@ -28,7 +28,7 @@ editor development (at least for myself).
 
 I started by forking out from a smaller go editor I made based on the code in
 https://github.com/antirez/kilo. I believe I have stripped out any code that
-could be argued to be purely copied or only slightly altered, so I have not
-included the (BSD-2) license from kilo. If you find some example showing this
-to be an error, please let me know.
+could be argued to be derivative, so I have not included the (BSD-2) license
+from kilo. If you find some example showing this to be an error, please let me
+know.
 
