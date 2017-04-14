@@ -8,9 +8,11 @@ package main
 // #include <wchar.h>
 // #include <ncursesw/ncurses.h>
 // #include <locale.h>
+// #include <sys/epoll.h>
 import "C"
 
 import (
+	"runtime"
 	"unicode/utf8"
 	"unsafe"
 )
@@ -35,7 +37,56 @@ const (
 	PAGE_UP     = C.KEY_PPAGE
 	PAGE_DOWN   = C.KEY_NPAGE
 	RESIZE      = C.KEY_RESIZE
+
+	ERR = C.ERR
 )
+
+var outChan chan (func()) = make(chan (func()), 16)
+var inChan chan (func()) = make(chan (func()), 1)
+var epollfd C.int
+
+func OnTerm(f func()) {
+	c := make(chan struct{}, 1)
+	outChan <- func() {
+		f()
+		c <- struct{}{}
+	}
+	<-c
+}
+
+func runOnInChan(f func()) {
+	c := make(chan struct{}, 1)
+	inChan <- func() {
+		f()
+		c <- struct{}{}
+	}
+	<-c
+}
+
+func init() {
+	go func() {
+		var epollev C.struct_epoll_event
+		epollfd = C.epoll_create1(0)
+		if epollfd == -1 {
+			panic("couldn't epoll_create")
+		}
+		epollev.events = C.EPOLLIN
+		// work around union
+		*((*C.int)(unsafe.Pointer(&epollev.data))) = 0
+		if C.epoll_ctl(epollfd, C.EPOLL_CTL_ADD, 0, &epollev) == -1 {
+			panic("couldn't epoll_ctl")
+		}
+		runtime.LockOSThread()
+		for {
+			select {
+			case f := <-outChan:
+				f()
+			case f := <-inChan:
+				f()
+			}
+		}
+	}()
+}
 
 func startRaw() {
 	empty := C.CString("")
@@ -51,10 +102,23 @@ func endRaw() {
 	C.endwin()
 }
 
-func getrune() rune {
+func getrune() (r rune) {
 	var c C.wint_t
-	C.wget_wch(C.stdscr, &c) // needs _XOPEN_SOURCE_EXTENDED
-	return rune(c)
+	var ev C.struct_epoll_event
+	n := C.epoll_wait(epollfd, &ev, 1, -1)
+	if n == -1 {
+		panic("couldn't epoll_wait")
+	} else if n == 0 {
+		return rune(ERR)
+	}
+	runOnInChan(func() {
+		if C.wget_wch(C.stdscr, &c) == ERR {
+			r = rune(ERR)
+		} else {
+			r = rune(c)
+		}
+	})
+	return
 }
 
 func getWindowSize() (int, int) {
@@ -67,6 +131,10 @@ func move(y, x int) {
 
 func clear() {
 	C.clear()
+}
+
+func clrtoeol() {
+	C.clrtoeol()
 }
 
 func refresh() {

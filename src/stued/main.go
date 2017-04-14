@@ -20,8 +20,8 @@ func run() int {
 		return 2
 	}
 
-	startRaw()
-	defer endRaw()
+	OnTerm(startRaw)
+	defer OnTerm(endRaw)
 
 	term, err := NewTerminal(os.Args[1], f)
 	f.Close()

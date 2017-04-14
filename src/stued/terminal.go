@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"time"
 )
 
 type Terminal struct {
@@ -15,17 +16,99 @@ type Terminal struct {
 type InputHandler func(term *Terminal, r rune) (InputHandler, error)
 
 func (term *Terminal) ProcessEditorEvent(ev EditorEvent) {
-	switch ev.(type) {
+	switch ev := ev.(type) {
 	case CursorMoved:
 		scroll, rx, _ := term.needToScroll()
 		if scroll {
 			term.Redraw()
 		} else {
+			term.renderStatus()
 			move(term.Editor.Cursor.Y-term.Scroll.Y, rx-term.Scroll.X)
+			refresh()
+		}
+	case RuneInserted:
+		scroll, rx, _ := term.needToScroll()
+		if scroll || ev.Rune == '\n' {
+			term.Redraw()
+		} else {
+			term.redrawLine(term.Editor.Cursor.Y)
+			term.renderStatus()
+			move(term.Editor.Cursor.Y-term.Scroll.Y, rx)
+			refresh()
+		}
+	case RuneRemoved:
+		scroll, rx, _ := term.needToScroll()
+		if scroll || ev.Rune == '\n' {
+			term.Redraw()
+		} else {
+			term.redrawLine(term.Editor.Cursor.Y)
+			term.renderStatus()
+			move(term.Editor.Cursor.Y-term.Scroll.Y, rx)
 			refresh()
 		}
 	default:
 		term.Redraw()
+	}
+}
+
+func (term *Terminal) redrawLine(y int) {
+	ry := y - term.Scroll.Y
+	if ry < 0 || ry >= term.Rows-2 {
+		return // offscreen
+	}
+	move(ry, 0)
+	clrtoeol()
+	term.writeLine(term.Editor.Rows[y])
+}
+
+func (term *Terminal) writeLine(row Row) {
+	displayed := 0
+	min := term.Scroll.X
+	max := min + term.Cols
+
+	for _, r := range row {
+		if displayed >= max {
+			break // no more room
+		}
+
+		if r == '\t' {
+			spaces := TAB_WIDTH - displayed%TAB_WIDTH
+			for i := 0; i < spaces; i++ {
+				if displayed >= min && displayed < max {
+					addrune(' ')
+				}
+				displayed++
+			}
+		} else {
+			rsize, ashex := runeWidth(r)
+			if displayed >= min && displayed+rsize <= max {
+				if ashex {
+					startReverse()
+					addstr(fmt.Sprintf("<%X>", r))
+					endReverse()
+				} else {
+					addrune(r)
+				}
+			}
+
+			// check if character straddled a scroll boundary
+			if displayed < min && displayed+rsize > min {
+				n := displayed + rsize - min
+				startReverse()
+				for i := 0; i < n; i++ {
+					addrune('<')
+				}
+				endReverse()
+			} else if displayed <= max && displayed+rsize > max {
+				n := max - displayed
+				startReverse()
+				for i := 0; i < n; i++ {
+					addrune('>')
+				}
+				endReverse()
+			}
+			displayed += rsize
+		}
 	}
 }
 
@@ -36,75 +119,26 @@ func (term *Terminal) needToScroll() (needed bool, rx, cw int) {
 	if ey < len(edit.Rows) {
 		ex, w = edit.Rows[ey].IndexToVisible(ex)
 	}
-	ex += w
-	needed = ex < sx || ex > sx+term.Cols || ey < sy || ey > sy+term.Rows-2
-	return needed, ex - w, w
+	needed = ex+w-1 < sx || ex >= sx+term.Cols || ey < sy || ey > sy+term.Rows-2
+	return needed, ex, w
 }
 
 func (term *Terminal) Redraw() {
 	clear()
 	edit := term.Editor
 	ry := edit.Cursor.Y
-	scroll, rx, curWidth := term.needToScroll()
-	curWidth--
+	scroll, rx, curswidth := term.needToScroll()
+	curswidth--
 
 	if scroll {
-		term.scrollTo(ry, rx, curWidth)
+		term.scrollTo(ry, rx, curswidth)
 	}
-
-	for y, editY := 0, term.Scroll.Y; y < term.Rows-2 && editY < len(edit.Rows); y, editY = y+1, editY+1 {
+	maxy := term.Rows - 2
+	maxrow := len(edit.Rows)
+	for y, editY := 0, term.Scroll.Y; y < maxy && editY < maxrow; y, editY = y+1, editY+1 {
 
 		move(y, 0)
-		editRow := edit.Rows[editY]
-
-		displayed := 0
-		min := term.Scroll.X
-		max := min + term.Cols
-
-		for _, r := range editRow {
-			if displayed >= max {
-				break // no more room
-			}
-
-			if r == '\t' {
-				spaces := TAB_WIDTH - displayed%TAB_WIDTH
-				for i := 0; i < spaces; i++ {
-					if displayed >= min && displayed < max {
-						addrune(' ')
-					}
-					displayed++
-				}
-			} else {
-				rsize, ashex := runeWidth(r)
-				if displayed >= min && displayed+rsize <= max {
-					if ashex {
-						startReverse()
-						addstr(fmt.Sprintf("<%X>", r))
-						endReverse()
-					} else {
-						addrune(r)
-					}
-				}
-
-				// check if character straddled a scroll boundary
-				if displayed < min && displayed+rsize > min {
-					n := displayed + rsize - min
-					startReverse()
-					for i := 0; i < n; i++ {
-						addrune('<')
-					}
-					endReverse()
-				} else if displayed <= max && displayed+rsize > max {
-					n := max - displayed
-					startReverse()
-					for i := 0; i < n; i++ {
-						addrune('>')
-					}
-					endReverse()
-				}
-				displayed += rsize
-			}
-		}
+		term.writeLine(edit.Rows[editY])
 	}
 
 	term.renderStatus()
@@ -112,7 +146,7 @@ func (term *Terminal) Redraw() {
 	refresh()
 }
 
-func (term *Terminal) scrollTo(ry, rx, curWidth int) {
+func (term *Terminal) scrollTo(ry, rx, curswidth int) {
 	usedRows := term.Rows - 2
 	if ry-term.Scroll.Y >= usedRows {
 		term.Scroll.Y = ry - (usedRows - 1)
@@ -120,8 +154,8 @@ func (term *Terminal) scrollTo(ry, rx, curWidth int) {
 		term.Scroll.Y = ry
 	}
 
-	if rx+curWidth-term.Scroll.X >= term.Cols {
-		term.Scroll.X = rx + curWidth - (term.Cols - 1)
+	if rx+curswidth-term.Scroll.X >= term.Cols {
+		term.Scroll.X = rx + curswidth - (term.Cols - 1)
 	} else if term.Scroll.X > rx {
 		term.Scroll.X = rx
 	}
@@ -159,7 +193,12 @@ func (term *Terminal) startInputChan() chan rune {
 	c := make(chan rune, 8)
 	go func() {
 		for {
-			c <- getrune()
+			r := getrune()
+			if r == ERR {
+				<-time.After(100 * time.Millisecond)
+			} else {
+				c <- r
+			}
 		}
 	}()
 	return c
@@ -172,7 +211,7 @@ func (term *Terminal) ProcessInput(initMode InputHandler) (err error) {
 	for mode != nil && err == nil {
 		select {
 		case ev := <-term.Editor.Events:
-			term.ProcessEditorEvent(ev)
+			OnTerm(func() { term.ProcessEditorEvent(ev) })
 		case r := <-input:
 			mode, err = mode(term, r)
 		}
