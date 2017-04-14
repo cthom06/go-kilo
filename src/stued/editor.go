@@ -15,6 +15,7 @@ type Editor struct {
 	Cursor struct{ X, Y int }
 	Rows   []Row
 	Dirty  bool
+	Events chan EditorEvent
 }
 
 func (edit *Editor) InsertRow(at int, row Row) {
@@ -81,19 +82,22 @@ func (row Row) VisibleToIndex(vis int) int {
 func (edit *Editor) AddRune(r rune) {
 	if r == '\n' {
 		edit.addNewline()
-		return
+	} else {
+		y := edit.Cursor.Y
+		for y >= len(edit.Rows) {
+			edit.InsertRow(len(edit.Rows), nil)
+		}
+		edit.Rows[y].Insert(edit.Cursor.X, r)
+		edit.Cursor.X++
+		edit.Dirty = true
 	}
-	y := edit.Cursor.Y
-	for y >= len(edit.Rows) {
-		edit.InsertRow(len(edit.Rows), nil)
-	}
-	edit.Rows[y].Insert(edit.Cursor.X, r)
-	edit.Cursor.X++
-	edit.Dirty = true
+	edit.Events <- RuneInserted{Cursor: edit.Cursor, Rune: r}
 }
 
 func (edit *Editor) RemoveRuneBack() {
-	x, y := edit.Cursor.X, edit.Cursor.Y
+	cursor := edit.Cursor
+	x, y := cursor.X, cursor.Y
+	var removed rune
 	if x == 0 {
 		if y == 0 {
 			return // nothing to backspace
@@ -104,11 +108,14 @@ func (edit *Editor) RemoveRuneBack() {
 			edit.Rows[y-1] = append(edit.Rows[y-1], edit.Rows[y]...)
 			edit.RemoveRow(y) // dirty
 		}
+		removed = '\n'
 	} else {
+		removed = edit.Rows[y][x-1]
 		edit.Rows[y].Remove(x - 1)
 		edit.Cursor.X--
 		edit.Dirty = true
 	}
+	edit.Events <- RuneRemoved{Cursor: cursor, Rune: removed}
 }
 
 func (edit *Editor) addNewline() {
@@ -145,6 +152,7 @@ func NewEditor(content io.Reader) (ret Editor, err error) {
 	if err == io.EOF {
 		err = nil
 	}
+	ret.Events = make(chan EditorEvent, 16)
 	return
 }
 
@@ -180,6 +188,7 @@ func (edit *Editor) MoveDown(n int) {
 		}
 		edit.Cursor.Y += n
 	}
+	edit.Events <- CursorMoved{X: edit.Cursor.X - x, Y: edit.Cursor.Y - y}
 }
 
 func (edit *Editor) MoveUp(n int) {
@@ -196,6 +205,7 @@ func (edit *Editor) MoveUp(n int) {
 		}
 		edit.Cursor.Y -= n
 	}
+	edit.Events <- CursorMoved{X: edit.Cursor.X - x, Y: edit.Cursor.Y - y}
 }
 
 // MoveLeft and MoveRight will try to skip zero-width characters
@@ -213,6 +223,7 @@ func (edit *Editor) MoveLeft() {
 			edit.MoveLeft()
 		}
 	}
+	edit.Events <- CursorMoved{X: edit.Cursor.X - x, Y: edit.Cursor.Y - y}
 }
 
 func (edit *Editor) MoveRight() {
@@ -237,4 +248,5 @@ func (edit *Editor) MoveRight() {
 			}
 		}
 	}
+	edit.Events <- CursorMoved{X: edit.Cursor.X - x, Y: edit.Cursor.Y - y}
 }

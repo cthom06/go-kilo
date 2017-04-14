@@ -34,6 +34,7 @@ const (
 	END_KEY     = C.KEY_END
 	PAGE_UP     = C.KEY_PPAGE
 	PAGE_DOWN   = C.KEY_NPAGE
+	RESIZE      = C.KEY_RESIZE
 )
 
 func startRaw() {

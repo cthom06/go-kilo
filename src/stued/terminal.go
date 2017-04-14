@@ -14,16 +14,43 @@ type Terminal struct {
 
 type InputHandler func(term *Terminal, r rune) (InputHandler, error)
 
-func (term *Terminal) Render() {
+func (term *Terminal) ProcessEditorEvent(ev EditorEvent) {
+	switch ev.(type) {
+	case CursorMoved:
+		scroll, rx, _ := term.needToScroll()
+		if scroll {
+			term.Redraw()
+		} else {
+			move(term.Editor.Cursor.Y-term.Scroll.Y, rx-term.Scroll.X)
+			refresh()
+		}
+	default:
+		term.Redraw()
+	}
+}
+
+func (term *Terminal) needToScroll() (needed bool, rx, cw int) {
+	edit := term.Editor
+	sx, sy := term.Scroll.X, term.Scroll.Y
+	ex, ey, w := edit.Cursor.X, edit.Cursor.Y, 1
+	if ey < len(edit.Rows) {
+		ex, w = edit.Rows[ey].IndexToVisible(ex)
+	}
+	ex += w
+	needed = ex < sx || ex > sx+term.Cols || ey < sy || ey > sy+term.Rows-2
+	return needed, ex - w, w
+}
+
+func (term *Terminal) Redraw() {
 	clear()
 	edit := term.Editor
-	rx, ry, curWidth := edit.Cursor.X, edit.Cursor.Y, 0
-	if ry < len(edit.Rows) {
-		rx, curWidth = edit.Rows[ry].IndexToVisible(rx)
-		curWidth--
-	}
+	ry := edit.Cursor.Y
+	scroll, rx, curWidth := term.needToScroll()
+	curWidth--
 
-	term.scrollTo(ry, rx, curWidth)
+	if scroll {
+		term.scrollTo(ry, rx, curWidth)
+	}
 
 	for y, editY := 0, term.Scroll.Y; y < term.Rows-2 && editY < len(edit.Rows); y, editY = y+1, editY+1 {
 
@@ -128,11 +155,27 @@ func (term *Terminal) renderStatus() {
 	addstr(term.Status)
 }
 
-func (term *Terminal) ProcessInput(mode InputHandler) (err error) {
-	term.Render()
+func (term *Terminal) startInputChan() chan rune {
+	c := make(chan rune, 8)
+	go func() {
+		for {
+			c <- getrune()
+		}
+	}()
+	return c
+}
+
+func (term *Terminal) ProcessInput(initMode InputHandler) (err error) {
+	term.Redraw()
+	input := term.startInputChan()
+	mode := initMode
 	for mode != nil && err == nil {
-		mode, err = mode(term, getrune())
-		term.Render()
+		select {
+		case ev := <-term.Editor.Events:
+			term.ProcessEditorEvent(ev)
+		case r := <-input:
+			mode, err = mode(term, r)
+		}
 	}
 	return
 }
