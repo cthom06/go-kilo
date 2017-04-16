@@ -1,23 +1,25 @@
-package main
+package terminal
 
 import (
+    "stued/editor"
+    "stued/runes"
 	"fmt"
 	"io"
 	"time"
 )
 
-type Terminal struct {
+type Window struct {
 	Scroll       struct{ X, Y int }
 	Rows, Cols   int
-	Editor       *Editor
-	Name, Status string
+	Editor       *editor.Editor
+	Name, status string
 }
 
-type InputHandler func(term *Terminal, r rune) (InputHandler, error)
+type InputHandler func(term *Window, r rune) (InputHandler, error)
 
-func (term *Terminal) ProcessEditorEvent(ev EditorEvent) {
+func (term *Window) ProcessEditorEvent(ev editor.EditorEvent) {
 	switch ev := ev.(type) {
-	case CursorMoved:
+	case editor.CursorMoved:
 		scroll, rx, _ := term.needToScroll()
 		if scroll {
 			term.Redraw()
@@ -26,7 +28,7 @@ func (term *Terminal) ProcessEditorEvent(ev EditorEvent) {
 			move(term.Editor.Cursor.Y-term.Scroll.Y, rx-term.Scroll.X)
 			refresh()
 		}
-	case RuneInserted:
+	case editor.RuneInserted:
 		scroll, rx, _ := term.needToScroll()
 		if scroll || ev.Rune == '\n' {
 			term.Redraw()
@@ -36,7 +38,7 @@ func (term *Terminal) ProcessEditorEvent(ev EditorEvent) {
 			move(term.Editor.Cursor.Y-term.Scroll.Y, rx)
 			refresh()
 		}
-	case RuneRemoved:
+	case editor.RuneRemoved:
 		scroll, rx, _ := term.needToScroll()
 		if scroll || ev.Rune == '\n' {
 			term.Redraw()
@@ -51,7 +53,15 @@ func (term *Terminal) ProcessEditorEvent(ev EditorEvent) {
 	}
 }
 
-func (term *Terminal) redrawLine(y int) {
+func (term *Window) SetStatus(msg string) {
+    term.status = msg
+    OnTerm(func() {
+        term.renderStatus()
+        refresh()
+    })
+}
+
+func (term *Window) redrawLine(y int) {
 	ry := y - term.Scroll.Y
 	if ry < 0 || ry >= term.Rows-2 {
 		return // offscreen
@@ -61,7 +71,7 @@ func (term *Terminal) redrawLine(y int) {
 	term.writeLine(term.Editor.Rows[y])
 }
 
-func (term *Terminal) writeLine(row Row) {
+func (term *Window) writeLine(row editor.Row) {
 	displayed := 0
 	min := term.Scroll.X
 	max := min + term.Cols
@@ -72,7 +82,7 @@ func (term *Terminal) writeLine(row Row) {
 		}
 
 		if r == '\t' {
-			spaces := TAB_WIDTH - displayed%TAB_WIDTH
+			spaces := editor.TAB_WIDTH - displayed%editor.TAB_WIDTH
 			for i := 0; i < spaces; i++ {
 				if displayed >= min && displayed < max {
 					addrune(' ')
@@ -80,7 +90,7 @@ func (term *Terminal) writeLine(row Row) {
 				displayed++
 			}
 		} else {
-			rsize, ashex := runeWidth(r)
+			rsize, ashex := runes.RuneWidth(r)
 			if displayed >= min && displayed+rsize <= max {
 				if ashex {
 					startReverse()
@@ -112,7 +122,7 @@ func (term *Terminal) writeLine(row Row) {
 	}
 }
 
-func (term *Terminal) needToScroll() (needed bool, rx, cw int) {
+func (term *Window) needToScroll() (needed bool, rx, cw int) {
 	edit := term.Editor
 	sx, sy := term.Scroll.X, term.Scroll.Y
 	ex, ey, w := edit.Cursor.X, edit.Cursor.Y, 1
@@ -123,7 +133,7 @@ func (term *Terminal) needToScroll() (needed bool, rx, cw int) {
 	return needed, ex, w
 }
 
-func (term *Terminal) Redraw() {
+func (term *Window) Redraw() {
 	clear()
 	edit := term.Editor
 	ry := edit.Cursor.Y
@@ -146,7 +156,7 @@ func (term *Terminal) Redraw() {
 	refresh()
 }
 
-func (term *Terminal) scrollTo(ry, rx, curswidth int) {
+func (term *Window) scrollTo(ry, rx, curswidth int) {
 	usedRows := term.Rows - 2
 	if ry-term.Scroll.Y >= usedRows {
 		term.Scroll.Y = ry - (usedRows - 1)
@@ -161,7 +171,7 @@ func (term *Terminal) scrollTo(ry, rx, curswidth int) {
 	}
 }
 
-func (term *Terminal) renderStatus() {
+func (term *Window) renderStatus() {
 	// line 1
 	move(term.Rows-2, 0)
 	startReverse()
@@ -186,10 +196,11 @@ func (term *Terminal) renderStatus() {
 	endReverse()
 	// line 2
 	move(term.Rows-1, 0)
-	addstr(term.Status)
+    clrtoeol() // may be redundant but easiest way for now
+	addstr(term.status)
 }
 
-func (term *Terminal) startInputChan() chan rune {
+func (term *Window) startInputChan() chan rune {
 	c := make(chan rune, 8)
 	go func() {
 		for {
@@ -204,7 +215,7 @@ func (term *Terminal) startInputChan() chan rune {
 	return c
 }
 
-func (term *Terminal) ProcessInput(initMode InputHandler) (err error) {
+func (term *Window) ProcessInput(initMode InputHandler) (err error) {
 	term.Redraw()
 	input := term.startInputChan()
 	mode := initMode
@@ -219,8 +230,8 @@ func (term *Terminal) ProcessInput(initMode InputHandler) (err error) {
 	return
 }
 
-func NewTerminal(name string, contents io.Reader) (ret Terminal, err error) {
-	ed, e := NewEditor(contents)
+func NewWindow(name string, contents io.Reader) (ret Window, err error) {
+	ed, e := editor.NewEditor(contents)
 	if e != nil {
 		err = e
 		return

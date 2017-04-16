@@ -1,6 +1,8 @@
-package main
+package runes
 
-import "unicode"
+import (
+    "unicode"
+)
 
 // something like...
 //

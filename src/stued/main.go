@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"stued/modes"
+	"stued/terminal"
 )
 
 func run() int {
@@ -20,16 +22,16 @@ func run() int {
 		return 2
 	}
 
-	OnTerm(startRaw)
-	defer OnTerm(endRaw)
+	terminal.OnTerm(terminal.StartRaw)
+	defer terminal.OnTerm(terminal.EndRaw)
 
-	term, err := NewTerminal(os.Args[1], f)
+	term, err := terminal.NewWindow(os.Args[1], f)
 	f.Close()
 	if err != nil {
-		term.Status =
-			fmt.Sprintf("error reading %s: %s", os.Args[1], err.Error())
+		term.SetStatus(
+			fmt.Sprintf("error reading %s: %s", os.Args[1], err.Error()))
 	}
-	term.ProcessInput(EditMode)
+	term.ProcessInput(modes.EditMode)
 	return 0
 }
 

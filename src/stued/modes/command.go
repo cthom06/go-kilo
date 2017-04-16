@@ -1,33 +1,34 @@
-package main
+package modes
 
 import (
 	"os"
+    "stued/terminal"
 )
 
-func CommandMode(term *Terminal, r rune) (InputHandler, error) {
-	var next InputHandler
+func CommandMode(term *terminal.Window, r rune) (terminal.InputHandler, error) {
+	var next terminal.InputHandler
 	cmdbuff := ""
-	next = func(term *Terminal, r rune) (InputHandler, error) {
+	next = func(term *terminal.Window, r rune) (terminal.InputHandler, error) {
 		switch r {
 		case '\n':
 			return process(term, cmdbuff)
-		case CTRL_C:
-			term.Status = ""
+		case terminal.CTRL_C:
+			term.SetStatus("")
 			return EditMode, nil
 		default:
 			cmdbuff += string([]rune{r})
 		}
-		term.Status = "cmd: " + cmdbuff
+		term.SetStatus("cmd: " + cmdbuff)
 		return next, nil
 	}
 	return next(term, r)
 }
 
-func process(term *Terminal, cmdbuff string) (InputHandler, error) {
+func process(term *terminal.Window, cmdbuff string) (terminal.InputHandler, error) {
 	switch cmdbuff {
 	case "q":
 		if term.Editor.Dirty {
-			term.Status = "Use q! to quit without saving"
+			term.SetStatus("Use q! to quit without saving")
 			return EditMode, nil
 		}
 		return nil, nil
@@ -42,13 +43,13 @@ func process(term *Terminal, cmdbuff string) (InputHandler, error) {
 		err = term.Editor.WriteTo(f)
 		if err == nil {
 			term.Editor.Dirty = false
-			term.Status = "file saved"
+			term.SetStatus("file saved")
 		} else {
-			term.Status = "error saving: " + err.Error()
+			term.SetStatus("error saving: " + err.Error())
 		}
 		return EditMode, err
 	default:
-		term.Status = "unknown command"
+		term.SetStatus("unknown command")
 	}
 	return EditMode, nil
 }

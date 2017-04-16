@@ -1,8 +1,9 @@
-package main
+package editor
 
 import (
 	"bufio"
 	"io"
+    "stued/runes"
 )
 
 const (
@@ -49,7 +50,7 @@ func (row Row) IndexToVisible(ind int) (vis, width int) {
 		if r == '\t' {
 			sum = sum + TAB_WIDTH - sum%TAB_WIDTH
 		} else {
-			w, _ := runeWidth(r)
+			w, _ := runes.RuneWidth(r)
 			sum = sum + w
 		}
 	}
@@ -58,7 +59,7 @@ func (row Row) IndexToVisible(ind int) (vis, width int) {
 	} else if row[ind] == '\t' {
 		return sum, TAB_WIDTH - sum%TAB_WIDTH
 	}
-	w, _ := runeWidth(row[ind])
+	w, _ := runes.RuneWidth(row[ind])
 	return sum, w
 }
 
@@ -68,7 +69,7 @@ func (row Row) VisibleToIndex(vis int) int {
 		if row[i] == '\t' {
 			sum = sum + TAB_WIDTH - sum%TAB_WIDTH
 		} else {
-			w, _ := runeWidth(row[i])
+			w, _ := runes.RuneWidth(row[i])
 			sum = sum + w
 		}
 
@@ -219,7 +220,7 @@ func (edit *Editor) MoveLeft() {
 		}
 	} else {
 		edit.Cursor.X--
-		if w, _ := runeWidth(edit.Rows[y][x-1]); w == 0 {
+		if w, _ := runes.RuneWidth(edit.Rows[y][x-1]); w == 0 {
 			edit.MoveLeft()
 		}
 	}
@@ -234,7 +235,7 @@ func (edit *Editor) MoveRight() {
 				edit.Cursor.X = 0
 				edit.Cursor.Y++
 				if len(edit.Rows[y+1]) > 0 {
-					if w, _ := runeWidth(edit.Rows[y+1][0]); w == 0 {
+					if w, _ := runes.RuneWidth(edit.Rows[y+1][0]); w == 0 {
 						edit.MoveRight()
 					}
 				}
@@ -242,7 +243,7 @@ func (edit *Editor) MoveRight() {
 		} else {
 			edit.Cursor.X++
 			if x+1 < len(edit.Rows[y]) {
-				if w, _ := runeWidth(edit.Rows[y][x+1]); w == 0 {
+				if w, _ := runes.RuneWidth(edit.Rows[y][x+1]); w == 0 {
 					edit.MoveRight()
 				}
 			}

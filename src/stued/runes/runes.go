@@ -1,11 +1,11 @@
-package main
+package runes
 
 import (
 	"math"
 	"unicode"
 )
 
-func runeWidth(r rune) (width int, ashex bool) {
+func RuneWidth(r rune) (width int, ashex bool) {
 	if unicode.In(r, unicode.Me, unicode.Mn, unicode.Cf) ||
 		(r >= 0x1160 && r <= 0x11FF) ||
 		!unicode.IsPrint(r) {

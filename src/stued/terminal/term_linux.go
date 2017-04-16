@@ -1,6 +1,6 @@
 // +build linux
 
-package main
+package terminal
 
 // #cgo CFLAGS: -D_XOPEN_SOURCE_EXTENDED
 // #cgo LDFLAGS: -lncursesw -ltinfo
@@ -42,7 +42,7 @@ const (
 )
 
 var outChan chan (func()) = make(chan (func()), 16)
-var inChan chan (func()) = make(chan (func()), 1)
+var inChan chan (func()) = make(chan (func()), 8)
 var epollfd C.int
 
 func OnTerm(f func()) {
@@ -88,7 +88,7 @@ func init() {
 	}()
 }
 
-func startRaw() {
+func StartRaw() {
 	empty := C.CString("")
 	C.setlocale(C.LC_ALL, empty)
 	C.free(unsafe.Pointer(empty))
@@ -98,7 +98,7 @@ func startRaw() {
 	C.noecho()
 }
 
-func endRaw() {
+func EndRaw() {
 	C.endwin()
 }
 
